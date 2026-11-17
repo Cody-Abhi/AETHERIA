@@ -1,0 +1,6 @@
+{
+  "name": "AETHERIA",
+  "description": "Share fleeting thoughts and emotions inside iridescent floating soap bubbles — up to five reflections a day.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

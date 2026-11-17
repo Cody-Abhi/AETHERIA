@@ -1,0 +1,95 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidBubbleSchema(data) {
+      return data.keys().hasAll([
+        'uid',
+        'authorHandle',
+        'text',
+        'emotion',
+        'createdAt',
+        'dateKey',
+        'warmthCount'
+      ])
+      && data.keys().hasOnly([
+        'uid',
+        'authorHandle',
+        'text',
+        'emotion',
+        'createdAt',
+        'dateKey',
+        'warmthCount'
+      ])
+      && data.uid is string
+      && data.uid.size() >= 1
+      && data.uid.size() <= 128
+      && data.authorHandle is string
+      && data.authorHandle.size() >= 2
+      && data.authorHandle.size() <= 32
+      && data.authorHandle.matches('^@[a-z0-9_]+$')
+      && data.text is string
+      && data.text.size() >= 1
+      && data.text.size() <= 140
+      && data.emotion is string
+      && data.emotion in ['Calm', 'Joy', 'Peace', 'Melancholy', 'Hope']
+      && data.createdAt is timestamp
+      && data.dateKey is string
+      && data.dateKey.size() == 10
+      && data.dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$')
+      && data.warmthCount is int
+      && data.warmthCount >= 0;
+    }
+
+    match /bubbles/{bubbleId} {
+      // Public read for visitors without requiring login; list is capped at 25 docs or scoped to caller's own UID
+      allow get: if isValidId(bubbleId);
+      allow list: if (request.query.limit is int && request.query.limit <= 25)
+        || (isSignedIn() && existing().uid == request.auth.uid);
+
+      // Authenticated creation strictly bound to caller UID, verified email, server timestamp, and 0 initial warmth
+      allow create: if isSignedIn()
+        && request.auth.token.email_verified == true
+        && isValidId(bubbleId)
+        && isValidBubbleSchema(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().warmthCount == 0;
+
+      // Updates limited strictly to incrementing warmthCount by +1 with all other fields immutable
+      allow update: if isValidId(bubbleId)
+        && isValidBubbleSchema(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['warmthCount'])
+        && incoming().warmthCount == existing().warmthCount + 1
+        && incoming().uid == existing().uid
+        && incoming().authorHandle == existing().authorHandle
+        && incoming().text == existing().text
+        && incoming().emotion == existing().emotion
+        && incoming().createdAt == existing().createdAt
+        && incoming().dateKey == existing().dateKey;
+
+      allow delete: if false;
+    }
+  }
+}
