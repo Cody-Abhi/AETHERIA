@@ -4,6 +4,8 @@ import { forwardRef } from 'react';
 import { EmotionIcon } from '@/components/EmotionIcon';
 import {
   EMOTION_CONFIG,
+  formatRemainingTime,
+  getRemainingLifetimeMinutes,
   type BurstDroplet,
   type ThoughtBubbleData,
 } from '@/lib/aetheria';
@@ -25,6 +27,14 @@ export const FloatingBubble = forwardRef<HTMLDivElement, FloatingBubbleProps>(
   ) {
     const emotionMeta = EMOTION_CONFIG[bubble.emotion];
     const size = displaySize;
+
+    const remainingText = bubble.createdAtMillis
+      ? formatRemainingTime(bubble.createdAtMillis)
+      : null;
+    const remainingMinutes = bubble.createdAtMillis
+      ? getRemainingLifetimeMinutes(bubble.createdAtMillis)
+      : 30;
+    const isFadingSoon = Boolean(bubble.createdAtMillis && remainingMinutes <= 3);
 
     return (
       <div
@@ -50,16 +60,16 @@ export const FloatingBubble = forwardRef<HTMLDivElement, FloatingBubbleProps>(
             onFocus={() => onHoverChange(bubble.id, true)}
             onBlur={() => onHoverChange(bubble.id, false)}
             disabled={isPopping || isHidden}
-            aria-label={`Pop bubble from @${bubble.username} feeling ${bubble.emotion}`}
+            aria-label={`Pop bubble from @${bubble.username} feeling ${bubble.emotion} (${remainingText || 'ephemeral'})`}
             className="soap-bubble-surface group relative flex cursor-pointer items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-500"
             style={{
               width: `${size}px`,
               height: `${size}px`,
               transform: isPopping ? 'scale3d(1.18, 1.18, 1)' : 'scale3d(1, 1, 1)',
-              opacity: isPopping ? 0 : 1,
+              opacity: isPopping ? 0 : isFadingSoon ? 0.82 : 1,
               transition: isPopping
                 ? 'transform 120ms cubic-bezier(0.16, 1, 0.3, 1), opacity 130ms ease-out'
-                : 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease',
+                : 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms ease, opacity 300ms ease',
               boxShadow: `
                 inset 0 6px 16px rgba(255, 255, 255, 0.92),
                 inset 0 -8px 18px rgba(180, 210, 255, 0.44),
@@ -170,6 +180,20 @@ export const FloatingBubble = forwardRef<HTMLDivElement, FloatingBubbleProps>(
               -
             </span>
             <span className="text-slate-600">{bubble.emotion}</span>
+            {remainingText && (
+              <>
+                <span aria-hidden="true" className="text-slate-300">
+                  •
+                </span>
+                <span
+                  className={`text-[9.5px] tabular-nums ${
+                    isFadingSoon ? 'font-semibold text-rose-500 animate-pulse' : 'text-slate-400'
+                  }`}
+                >
+                  {remainingText}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>

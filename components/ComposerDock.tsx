@@ -15,7 +15,6 @@ interface ComposerDockProps {
   isSubmitting: boolean;
   remainingThoughts: number;
   statusError: string | null;
-  isLiveUnlocked: boolean;
   onPromptName: () => void;
   onRelease: (message: string, emotion: EmotionType) => Promise<boolean>;
   onSelectEmotion?: (emotion: EmotionType) => void;
@@ -26,7 +25,6 @@ export function ComposerDock({
   isSubmitting,
   remainingThoughts,
   statusError,
-  isLiveUnlocked,
   onPromptName,
   onRelease,
   onSelectEmotion,
@@ -129,8 +127,6 @@ export function ComposerDock({
                   ? 'First write your name, then share your thoughts...'
                   : isLimitReached
                   ? "You've shared your 5 thoughts for today. Return tomorrow."
-                  : !isLiveUnlocked
-                  ? `Release your first thought to unlock live thoughts, ${userName}...`
                   : `What's on your mind, ${userName}?`
               }
               aria-label="What's on your mind?"

@@ -6,7 +6,8 @@ import { Clock, X } from 'lucide-react';
 import { EmotionIcon } from '@/components/EmotionIcon';
 import {
   EMOTION_CONFIG,
-  getRemainingThoughtMinutes,
+  formatRemainingTime,
+  getRemainingLifetimeMinutes,
   type ThoughtBubbleData,
 } from '@/lib/aetheria';
 
@@ -31,6 +32,13 @@ export function MessageRevealCard({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [bubble, onClose]);
+
+  const remainingMinutes = bubble?.createdAtMillis
+    ? getRemainingLifetimeMinutes(bubble.createdAtMillis)
+    : 30;
+  const remainingText = bubble?.createdAtMillis
+    ? formatRemainingTime(bubble.createdAtMillis)
+    : '30m left';
 
   return (
     <AnimatePresence>
@@ -90,7 +98,7 @@ export function MessageRevealCard({
                 style={{ backgroundColor: EMOTION_CONFIG[bubble.emotion].colorHex }}
               />
 
-              {/* Top Author Lockup & Close Action */}
+              {/* Top Author Lockup, 30m Ephemeral Badge & Close Action */}
               <div className="relative z-10 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <span
@@ -105,14 +113,24 @@ export function MessageRevealCard({
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-full border border-white/80 bg-white/60 px-3.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-white/90 hover:text-slate-900 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Close</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <span
+                    title="Ephemeral Thought: Dissolves into the ether 30 minutes after release"
+                    className="hidden sm:inline-flex items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[10.5px] font-medium text-slate-500 border border-white/80"
+                  >
+                    <Clock className="h-3 w-3 text-violet-500" />
+                    <span>30m Lifetime</span>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-full border border-white/80 bg-white/60 px-3.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-white/90 hover:text-slate-900 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Close</span>
+                  </button>
+                </div>
               </div>
 
               {/* Message in Crisp Dark Charcoal Cormorant Garamond */}
@@ -144,9 +162,9 @@ export function MessageRevealCard({
                 </button>
               </div>
 
-              {/* Bottom Metadata Row: Colored Emotion Pill, Timestamp & AETHERIA Watermark */}
-              <div className="relative z-10 flex items-center justify-between gap-3 border-t border-white/70 pt-4">
-                <div className="flex items-center gap-2.5">
+              {/* Bottom Metadata Row: Colored Emotion Pill, Timestamp & Ephemeral Countdown */}
+              <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-t border-white/70 pt-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${EMOTION_CONFIG[bubble.emotion].badgeBg} ${EMOTION_CONFIG[bubble.emotion].badgeText} ${EMOTION_CONFIG[bubble.emotion].badgeBorder}`}
                   >
@@ -158,14 +176,18 @@ export function MessageRevealCard({
                     {bubble.timestamp}
                   </span>
 
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/70 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 tabular-nums">
-                    <Clock className="h-2.5 w-2.5 text-slate-400" />
-                    <span>
-                      {bubble.createdAtMs
-                        ? `${getRemainingThoughtMinutes(bubble.createdAtMs)}m left`
-                        : 'Sample Thought'}
+                  {bubble.createdAtMillis && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
+                        remainingMinutes <= 3
+                          ? 'bg-rose-50/90 border-rose-200 text-rose-600 animate-pulse'
+                          : 'bg-violet-50/80 border-violet-100 text-violet-700'
+                      }`}
+                    >
+                      <Clock className="h-3 w-3" />
+                      <span>{remainingText}</span>
                     </span>
-                  </span>
+                  )}
                 </div>
 
                 <span className="font-serif text-[11px] font-semibold tracking-[0.24em] text-slate-500/80 select-none">

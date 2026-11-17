@@ -20,5 +20,6 @@ test('firestore.rules enforces schema invariants for /bubbles/{bubbleId}', () =>
   assert.match(content, /affectedKeys\(\)\.hasOnly\(\['warmthCount'\]\)/);
   assert.match(content, /incoming\(\)\.warmthCount == existing\(\)\.warmthCount \+ 1/);
   assert.match(content, /request\.query\.limit is int && request\.query\.limit <= 25/);
-  assert.match(content, /duration\.value\(30,\s*'m'\)/);
+  assert.match(content, /allow delete: if isValidId\(bubbleId\)/);
+  assert.match(content, /duration\.value\(25, 'm'\)/);
 });

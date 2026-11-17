@@ -31,7 +31,6 @@ import {
   QUOTA_STORAGE_KEY,
   SEED_THOUGHTS,
   STREAM_LIMIT,
-  THOUGHT_LIFETIME_MS,
   canReleaseThought,
   computeBubbleDiameter,
   consumeDailyQuota,
@@ -45,12 +44,10 @@ import {
   getSafeCanvasBounds,
   getTodayDateKey,
   getUtcDateKey,
-  hasUserPostedThought,
-  isBubbleExpired,
+  isThoughtExpired,
   parseDailyQuota,
   reconcileBubblePhysics,
   setLocalUserName,
-  setUserPostedThought,
   stepBubblePhysics,
   stripLeadingAt,
   validateThoughtInput,
@@ -96,14 +93,12 @@ export function AetheriaCanvas() {
   const [userName, setUserName] = useState<string | null>(null);
   const [clientUid, setClientUid] = useState<string>('');
   const [isNameModalOpen, setIsNameModalOpen] = useState<boolean>(false);
-  const [isLiveUnlocked, setIsLiveUnlocked] = useState<boolean>(false);
-  const [showUnlockedToast, setShowUnlockedToast] = useState<boolean>(false);
   const [remainingThoughts, setRemainingThoughts] = useState<number>(DAILY_THOUGHT_LIMIT);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<Error | null>(null);
 
-  const [streamBubbles, setStreamBubbles] = useState<ThoughtBubbleData[]>([]);
+  const [streamBubbles, setStreamBubbles] = useState<ThoughtBubbleData[]>(SEED_THOUGHTS);
   const [warmthSentIds, setWarmthSentIds] = useState<Record<string, boolean>>({});
   const [fallbackWarmthBonus, setFallbackWarmthBonus] = useState<Record<string, number>>({});
 
@@ -130,27 +125,8 @@ export function AetheriaCanvas() {
     throw fatalError;
   }
 
-  // Active bubbles to render:
-  // 1. If user hasn't posted a thought yet -> show dummy / seed thoughts
-  // 2. Once user posts a thought -> reveal real thoughts from the live Firestore stream
-  const activeStreamBubbles = useMemo(() => {
-    if (!isLiveUnlocked) {
-      return SEED_THOUGHTS;
-    }
-    const realBubbles = streamBubbles.filter((b) => !b.isFallback);
-    if (realBubbles.length === 0) {
-      return SEED_THOUGHTS;
-    }
-    // If few live bubbles exist, blend dummy thoughts so canvas remains active and ethereal
-    if (realBubbles.length < 4) {
-      const needed = 6 - realBubbles.length;
-      return [...realBubbles, ...SEED_THOUGHTS.slice(0, needed)];
-    }
-    return realBubbles;
-  }, [isLiveUnlocked, streamBubbles]);
-
   const bubbles = useMemo(() => {
-    return activeStreamBubbles.map((item) => {
+    return streamBubbles.map((item) => {
       const sent = Boolean(warmthSentIds[item.id]);
       const bonus = item.isFallback ? fallbackWarmthBonus[item.id] ?? 0 : 0;
       return {
@@ -159,7 +135,7 @@ export function AetheriaCanvas() {
         warmthCount: item.warmthCount + bonus,
       };
     });
-  }, [activeStreamBubbles, fallbackWarmthBonus, warmthSentIds]);
+  }, [fallbackWarmthBonus, streamBubbles, warmthSentIds]);
 
   useEffect(() => {
     bubblesRef.current = bubbles;
@@ -174,7 +150,7 @@ export function AetheriaCanvas() {
     }
   }, []);
 
-  // Initialize user name, client UID, unlock status, and local daily quota on mount
+  // Initialize user name, client UID, and local daily quota on mount
   useEffect(() => {
     void testConnection();
 
@@ -190,9 +166,6 @@ export function AetheriaCanvas() {
 
     const uid = getOrCreateClientUid();
     setClientUid(uid);
-
-    const hasPosted = hasUserPostedThought();
-    setIsLiveUnlocked(hasPosted);
 
     const todayKey = getTodayDateKey();
     const localQuota = parseDailyQuota(window.localStorage.getItem(QUOTA_STORAGE_KEY), todayKey);
@@ -213,8 +186,7 @@ export function AetheriaCanvas() {
     return () => window.cancelAnimationFrame(frameId);
   }, [syncDomTransforms]);
 
-  // Public real-time stream of the 25 most recent bubbles:
-  // Automatically filters and deletes thoughts older than 30 minutes
+  // Public real-time stream of the 25 most recent bubbles (ephemeral: under 30 minutes)
   useEffect(() => {
     const bubblesQuery = query(
       collection(db, 'bubbles'),
@@ -226,7 +198,7 @@ export function AetheriaCanvas() {
       bubblesQuery,
       (snapshot) => {
         const now = Date.now();
-        const validList: ThoughtBubbleData[] = [];
+        const activeList: ThoughtBubbleData[] = [];
 
         for (const docSnap of snapshot.docs) {
           const data = docSnap.data() as FirestoreBubbleDoc;
@@ -236,15 +208,15 @@ export function AetheriaCanvas() {
             data.createdAt && typeof data.createdAt.toDate === 'function'
               ? data.createdAt.toDate()
               : new Date();
-          const createdAtMs = createdDate.getTime();
+          const createdAtMillis = createdDate.getTime();
 
-          // Ephemeral auto-cleanup: messages delete after 30 minutes
-          if (isBubbleExpired(createdAtMs, now)) {
-            deleteDoc(doc(db, 'bubbles', docSnap.id)).catch(() => {});
+          // Ephemeral cleanup: If bubble is older than 30 minutes, remove from canvas and delete from Firestore
+          if (isThoughtExpired(createdAtMillis, now)) {
+            void deleteDoc(doc(db, 'bubbles', docSnap.id)).catch(() => {});
             continue;
           }
 
-          validList.push({
+          activeList.push({
             id: docSnap.id,
             uid: typeof data.uid === 'string' ? data.uid : undefined,
             username: stripLeadingAt(rawHandle),
@@ -252,20 +224,20 @@ export function AetheriaCanvas() {
             message: rawText,
             timestamp: formatCurrentTimestamp(createdDate),
             dateKey: typeof data.dateKey === 'string' ? data.dateKey : undefined,
-            createdAtMs,
-            expiresAtMs: createdAtMs + THOUGHT_LIFETIME_MS,
             warmthCount:
               typeof data.warmthCount === 'number' && Number.isFinite(data.warmthCount)
                 ? data.warmthCount
                 : 0,
             isFallback: false,
             size: computeBubbleDiameter(docSnap.id, rawText.length),
+            createdAtMillis,
           });
         }
 
+        const nextList: ThoughtBubbleData[] = activeList.length > 0 ? activeList : SEED_THOUGHTS;
         const bounds = getSafeCanvasBounds(window.innerWidth, window.innerHeight);
-        physicsRef.current = reconcileBubblePhysics(physicsRef.current, validList, bounds);
-        setStreamBubbles(validList);
+        physicsRef.current = reconcileBubblePhysics(physicsRef.current, nextList, bounds);
+        setStreamBubbles(nextList);
       },
       (error) => {
         try {
@@ -281,32 +253,37 @@ export function AetheriaCanvas() {
     return () => unsubscribeStream();
   }, []);
 
-  // Periodic ticker to purge expired bubbles on screen every 10 seconds without needing refresh
+  // 10-second real-time check to expire and delete bubbles that cross the 30-minute mark
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    const timer = window.setInterval(() => {
       const now = Date.now();
       setStreamBubbles((prev) => {
-        let changed = false;
-        const remaining = prev.filter((b) => {
-          if (b.isFallback || !b.createdAtMs) return true;
-          if (isBubbleExpired(b.createdAtMs, now)) {
-            changed = true;
-            deleteDoc(doc(db, 'bubbles', b.id)).catch(() => {});
+        let hasExpired = false;
+        const remaining = prev.filter((bubble) => {
+          if (bubble.isFallback) return true;
+          if (bubble.createdAtMillis && isThoughtExpired(bubble.createdAtMillis, now)) {
+            hasExpired = true;
+            void deleteDoc(doc(db, 'bubbles', bubble.id)).catch(() => {});
+            if (activeBubbleId === bubble.id) {
+              setActiveBubbleId(null);
+            }
             return false;
           }
           return true;
         });
-        if (changed) {
+
+        if (hasExpired) {
+          const nextList = remaining.length > 0 ? remaining : SEED_THOUGHTS;
           const bounds = getSafeCanvasBounds(window.innerWidth, window.innerHeight);
-          physicsRef.current = reconcileBubblePhysics(physicsRef.current, remaining, bounds);
-          return remaining;
+          physicsRef.current = reconcileBubblePhysics(physicsRef.current, nextList, bounds);
+          return nextList;
         }
         return prev;
       });
     }, 10000);
 
-    return () => window.clearInterval(interval);
-  }, []);
+    return () => window.clearInterval(timer);
+  }, [activeBubbleId]);
 
   // Keep DOM transforms synced whenever bubble list updates
   useEffect(() => {
@@ -577,14 +554,6 @@ export function AetheriaCanvas() {
         window.localStorage.setItem(QUOTA_STORAGE_KEY, JSON.stringify(consumed.nextQuota));
         setRemainingThoughts(getRemainingThoughts(consumed.nextQuota, todayKey));
 
-        // Unlock real community thoughts stream!
-        setUserPostedThought();
-        setIsLiveUnlocked(true);
-        setShowUnlockedToast(true);
-        window.setTimeout(() => {
-          setShowUnlockedToast(false);
-        }, 4000);
-
         playReleaseBubble(soundEnabled);
         return true;
       } catch (error) {
@@ -606,27 +575,8 @@ export function AetheriaCanvas() {
         onToggleSound={handleToggleSound}
         userHandle={userHandle}
         userName={userName}
-        isLiveUnlocked={isLiveUnlocked}
         onEditName={() => setIsNameModalOpen(true)}
       />
-
-      {/* Real Stream Unlocked Celebration Toast */}
-      {showUnlockedToast && (
-        <div
-          role="status"
-          style={{
-            background: 'rgba(255, 255, 255, 0.88)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            border: '1px solid rgba(139, 124, 246, 0.45)',
-            boxShadow: '0 14px 40px rgba(139, 124, 246, 0.25)',
-          }}
-          className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-medium text-slate-800 transition-all animate-in fade-in slide-in-from-top-4 duration-300"
-        >
-          <span className="text-violet-600 text-sm">✨</span>
-          <span>Live community stream unlocked! Welcome to the collective canvas.</span>
-        </div>
-      )}
 
       {/* Interactive Floating Bubble Canvas */}
       <main
@@ -669,7 +619,6 @@ export function AetheriaCanvas() {
         isSubmitting={isSubmitting}
         remainingThoughts={remainingThoughts}
         statusError={statusError}
-        isLiveUnlocked={isLiveUnlocked}
         onPromptName={() => setIsNameModalOpen(true)}
         onRelease={handleReleaseBubble}
         onSelectEmotion={handleSelectEmotion}
