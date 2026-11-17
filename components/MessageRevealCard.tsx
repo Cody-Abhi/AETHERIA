@@ -2,9 +2,13 @@
 
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import { Clock, X } from 'lucide-react';
 import { EmotionIcon } from '@/components/EmotionIcon';
-import { EMOTION_CONFIG, type ThoughtBubbleData } from '@/lib/aetheria';
+import {
+  EMOTION_CONFIG,
+  getRemainingThoughtMinutes,
+  type ThoughtBubbleData,
+} from '@/lib/aetheria';
 
 interface MessageRevealCardProps {
   bubble: ThoughtBubbleData | null;
@@ -152,6 +156,15 @@ export function MessageRevealCard({
 
                   <span className="text-xs font-medium text-slate-600 tabular-nums">
                     {bubble.timestamp}
+                  </span>
+
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100/70 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 tabular-nums">
+                    <Clock className="h-2.5 w-2.5 text-slate-400" />
+                    <span>
+                      {bubble.createdAtMs
+                        ? `${getRemainingThoughtMinutes(bubble.createdAtMs)}m left`
+                        : 'Sample Thought'}
+                    </span>
                   </span>
                 </div>
 

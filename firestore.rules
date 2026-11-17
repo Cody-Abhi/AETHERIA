@@ -81,7 +81,9 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().dateKey == existing().dateKey;
 
-      allow delete: if false;
+      // Allow deleting thought bubbles older than 30 minutes (transient ephemeral thoughts)
+      allow delete: if isValidId(bubbleId)
+        && request.time >= resource.data.createdAt + duration.value(30, 'm');
     }
   }
 }

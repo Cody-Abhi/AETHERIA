@@ -86,6 +86,8 @@ export interface ThoughtBubbleData {
   message: string;
   timestamp: string;
   dateKey?: string;
+  createdAtMs?: number;
+  expiresAtMs?: number;
   warmthCount: number;
   warmthSent?: boolean;
   isUserCreated?: boolean;
@@ -127,12 +129,14 @@ export const MAX_THOUGHT_LENGTH = 140;
 export const MAX_AUTHOR_HANDLE_LENGTH = 32;
 export const MAX_UID_LENGTH = 128;
 export const STREAM_LIMIT = 25;
+export const THOUGHT_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes in milliseconds
 export const AUTHOR_HANDLE_PATTERN = /^@[a-z0-9_]+$/;
 export const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const QUOTA_STORAGE_KEY = 'aetheria_daily_quota_v1';
 export const USER_THOUGHTS_STORAGE_KEY = 'aetheria_user_thoughts_v1';
 export const NAME_STORAGE_KEY = 'aetheria_user_name_v1';
 export const CLIENT_UID_STORAGE_KEY = 'aetheria_client_uid_v1';
+export const HAS_POSTED_STORAGE_KEY = 'aetheria_has_posted_thought_v1';
 
 export const SEED_THOUGHTS: ThoughtBubbleData[] = [
   {
@@ -287,6 +291,36 @@ export function validateNameInput(name: string): {
     trimmed,
     handle: deriveAuthorHandle(trimmed),
   };
+}
+
+export function hasUserPostedThought(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(HAS_POSTED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setUserPostedThought(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HAS_POSTED_STORAGE_KEY, 'true');
+  } catch {
+    // ignore
+  }
+}
+
+export function isBubbleExpired(createdAtMs: number, nowMs: number = Date.now()): boolean {
+  if (!createdAtMs || !Number.isFinite(createdAtMs)) return false;
+  return nowMs - createdAtMs >= THOUGHT_LIFETIME_MS;
+}
+
+export function getRemainingThoughtMinutes(createdAtMs: number, nowMs: number = Date.now()): number {
+  if (!createdAtMs || !Number.isFinite(createdAtMs)) return 30;
+  const elapsed = nowMs - createdAtMs;
+  const remainingMs = Math.max(0, THOUGHT_LIFETIME_MS - elapsed);
+  return Math.max(1, Math.ceil(remainingMs / (60 * 1000)));
 }
 
 export function stripLeadingAt(handle: string): string {

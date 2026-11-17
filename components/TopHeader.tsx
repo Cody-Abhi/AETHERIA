@@ -9,6 +9,7 @@ interface TopHeaderProps {
   onToggleSound: () => void;
   userHandle: string | null;
   userName: string | null;
+  isLiveUnlocked: boolean;
   onEditName: () => void;
 }
 
@@ -18,6 +19,7 @@ export function TopHeader({
   onToggleSound,
   userHandle,
   userName,
+  isLiveUnlocked,
   onEditName,
 }: TopHeaderProps) {
   const isExhausted = remainingThoughts === 0;
@@ -70,6 +72,32 @@ export function TopHeader({
 
       {/* Right: User Name / Handle Pill & Live Quota Badge */}
       <div className="flex shrink-0 items-center justify-end gap-1.5 sm:min-w-0 sm:flex-1 sm:gap-2.5">
+        {/* Stream Mode Indicator */}
+        {isLiveUnlocked ? (
+          <span
+            title="Real-time community thoughts stream active"
+            style={{
+              border: '1px solid rgba(255, 255, 255, 0.85)',
+              boxShadow: 'inset 0 1px 3px rgba(255, 255, 255, 0.9), 0 4px 12px rgba(110, 231, 183, 0.15)',
+            }}
+            className="hidden items-center gap-1.5 rounded-full bg-emerald-50/80 px-2.5 py-1 text-[11px] font-medium text-emerald-700 backdrop-blur-md lg:inline-flex"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Live Stream</span>
+          </span>
+        ) : (
+          <span
+            title="Previewing sample thoughts. Release a thought to unlock the live stream!"
+            style={{
+              border: '1px solid rgba(255, 255, 255, 0.85)',
+              boxShadow: 'inset 0 1px 3px rgba(255, 255, 255, 0.9), 0 4px 12px rgba(167, 139, 250, 0.15)',
+            }}
+            className="hidden items-center gap-1.5 rounded-full bg-violet-50/80 px-2.5 py-1 text-[11px] font-medium text-violet-700 backdrop-blur-md lg:inline-flex"
+          >
+            <span>🌟 Sample Mode</span>
+          </span>
+        )}
+
         {userHandle ? (
           <>
             <button
