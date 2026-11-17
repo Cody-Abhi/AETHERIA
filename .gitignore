@@ -3,6 +3,7 @@ node_modules/
 out/
 .firebase/
 coverage/
+*.tsbuildinfo
 .DS_Store
 *.log
 .env*

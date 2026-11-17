@@ -131,6 +131,8 @@ export const AUTHOR_HANDLE_PATTERN = /^@[a-z0-9_]+$/;
 export const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const QUOTA_STORAGE_KEY = 'aetheria_daily_quota_v1';
 export const USER_THOUGHTS_STORAGE_KEY = 'aetheria_user_thoughts_v1';
+export const NAME_STORAGE_KEY = 'aetheria_user_name_v1';
+export const CLIENT_UID_STORAGE_KEY = 'aetheria_client_uid_v1';
 
 export const SEED_THOUGHTS: ThoughtBubbleData[] = [
   {
@@ -213,7 +215,7 @@ export function deriveAuthorHandle(
   displayName: string | null | undefined,
   email?: string | null
 ): string {
-  const rawName = (displayName ?? '').trim();
+  const rawName = (displayName ?? '').trim().replace(/^@+/, '');
   const firstToken = rawName ? rawName.split(/\s+/)[0] : '';
   const emailPrefix = !firstToken && email ? email.split('@')[0] : '';
   const candidate = (firstToken || emailPrefix)
@@ -224,6 +226,67 @@ export function deriveAuthorHandle(
   const safeBody = candidate.length >= 1 ? candidate : 'dreamer';
   const handle = `@${safeBody}`;
   return AUTHOR_HANDLE_PATTERN.test(handle) ? handle : '@dreamer';
+}
+
+export function getOrCreateClientUid(): string {
+  if (typeof window === 'undefined') {
+    return 'anon_guest_seed';
+  }
+  try {
+    const existing = window.localStorage.getItem(CLIENT_UID_STORAGE_KEY);
+    if (existing && existing.length > 0) {
+      return existing;
+    }
+    const newUid = `anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    window.localStorage.setItem(CLIENT_UID_STORAGE_KEY, newUid);
+    return newUid;
+  } catch {
+    return `anon_${Math.random().toString(36).slice(2, 12)}`;
+  }
+}
+
+export function getLocalUserName(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = window.localStorage.getItem(NAME_STORAGE_KEY);
+    return stored ? stored.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setLocalUserName(name: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(NAME_STORAGE_KEY, name.trim());
+  } catch {
+    // ignore
+  }
+}
+
+export function validateNameInput(name: string): {
+  valid: boolean;
+  trimmed: string;
+  handle: string;
+  error?: string;
+} {
+  const trimmed = name.trim().replace(/^@+/, '');
+  if (!trimmed) {
+    return { valid: false, trimmed: '', handle: '@dreamer', error: 'Please enter your name or handle.' };
+  }
+  if (trimmed.length > 24) {
+    return {
+      valid: false,
+      trimmed: trimmed.slice(0, 24),
+      handle: deriveAuthorHandle(trimmed),
+      error: 'Name must be 24 characters or less.',
+    };
+  }
+  return {
+    valid: true,
+    trimmed,
+    handle: deriveAuthorHandle(trimmed),
+  };
 }
 
 export function stripLeadingAt(handle: string): string {

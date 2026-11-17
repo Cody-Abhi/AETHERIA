@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const rulesPath = path.resolve(process.cwd(), 'firestore.rules');
 
-test('firestore.rules enforces Eight Pillars and Dirty Dozen invariants for /bubbles/{bubbleId}', () => {
+test('firestore.rules enforces schema invariants for /bubbles/{bubbleId}', () => {
   const content = fs.readFileSync(rulesPath, 'utf8');
 
   assert.match(content, /rules_version\s*=\s*'2'/);
@@ -15,8 +15,6 @@ test('firestore.rules enforces Eight Pillars and Dirty Dozen invariants for /bub
   assert.match(content, /data\.keys\(\)\.hasAll\(/);
   assert.match(content, /data\.keys\(\)\.hasOnly\(/);
   assert.match(content, /data\.text\.size\(\)\s*<=\s*140/);
-  assert.match(content, /incoming\(\)\.uid == request\.auth\.uid/);
-  assert.match(content, /request\.auth\.token\.email_verified == true/);
   assert.match(content, /incoming\(\)\.createdAt == request\.time/);
   assert.match(content, /incoming\(\)\.warmthCount == 0/);
   assert.match(content, /affectedKeys\(\)\.hasOnly\(\['warmthCount'\]\)/);

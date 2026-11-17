@@ -1,28 +1,24 @@
 'use client';
 
-import { LogIn, LogOut, Volume2, VolumeX } from 'lucide-react';
+import { Sparkles, UserCheck, Volume2, VolumeX } from 'lucide-react';
 import { DAILY_THOUGHT_LIMIT } from '@/lib/aetheria';
 
 interface TopHeaderProps {
   remainingThoughts: number;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  isAuthReady: boolean;
   userHandle: string | null;
-  isSigningIn: boolean;
-  onSignIn: () => void;
-  onSignOut: () => void;
+  userName: string | null;
+  onEditName: () => void;
 }
 
 export function TopHeader({
   remainingThoughts,
   soundEnabled,
   onToggleSound,
-  isAuthReady,
   userHandle,
-  isSigningIn,
-  onSignIn,
-  onSignOut,
+  userName,
+  onEditName,
 }: TopHeaderProps) {
   const isExhausted = remainingThoughts === 0;
 
@@ -72,21 +68,25 @@ export function TopHeader({
         </h1>
       </div>
 
-      {/* Right: Google Sign-In Pill (Signed Out) or @firstname + Live Quota Badge (Signed In) */}
+      {/* Right: User Name / Handle Pill & Live Quota Badge */}
       <div className="flex shrink-0 items-center justify-end gap-1.5 sm:min-w-0 sm:flex-1 sm:gap-2.5">
         {userHandle ? (
           <>
-            <span
+            <button
+              type="button"
+              onClick={onEditName}
+              title={`Click to change name (${userName || userHandle})`}
               data-testid="user-handle-badge"
               style={{
                 border: '1px solid rgba(255, 255, 255, 0.85)',
                 boxShadow:
                   'inset 0 2px 6px rgba(255, 255, 255, 0.92), 0 6px 20px rgba(140, 150, 200, 0.14)',
               }}
-              className="hidden items-center rounded-full bg-white/62 px-3 py-2 text-xs font-medium text-slate-700 backdrop-blur-xl md:inline-flex"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/65 px-3 py-1.5 text-xs font-medium text-slate-700 backdrop-blur-xl transition-all hover:bg-white/85 hover:text-slate-900 active:scale-95"
             >
-              {userHandle}
-            </span>
+              <UserCheck className="h-3.5 w-3.5 text-violet-600" />
+              <span>{userHandle}</span>
+            </button>
 
             <div
               data-testid="daily-quota-badge"
@@ -96,52 +96,33 @@ export function TopHeader({
                 boxShadow:
                   'inset 0 2px 6px rgba(255, 255, 255, 0.92), 0 6px 20px rgba(140, 150, 200, 0.14)',
               }}
-              className={`flex items-center rounded-full px-2.5 py-2 text-[10.5px] font-medium tracking-tight tabular-nums whitespace-nowrap backdrop-blur-xl transition-colors sm:px-4 sm:py-2 sm:text-xs ${
+              className={`flex items-center rounded-full px-2.5 py-1.5 text-[10.5px] font-medium tracking-tight tabular-nums whitespace-nowrap backdrop-blur-xl transition-colors sm:px-4 sm:py-2 sm:text-xs ${
                 isExhausted
                   ? 'bg-rose-50/65 text-slate-600'
                   : 'bg-white/62 text-slate-700'
               }`}
             >
-              <span className="mr-1.5 font-semibold text-violet-700 md:hidden">
-                {userHandle}
-              </span>
               <span className="font-semibold text-slate-900">{remainingThoughts}</span>
               <span className="mx-0.5 text-slate-400 sm:mx-1">/</span>
               <span>{DAILY_THOUGHT_LIMIT}</span>
               <span className="ml-1 hidden sm:inline">Thoughts Left Today</span>
               <span className="ml-1 sm:hidden">Left</span>
             </div>
-
-            <button
-              type="button"
-              onClick={onSignOut}
-              aria-label="Sign out"
-              title={`Sign out (${userHandle})`}
-              style={{
-                border: '1px solid rgba(255, 255, 255, 0.85)',
-                boxShadow:
-                  'inset 0 2px 6px rgba(255, 255, 255, 0.9), 0 6px 18px rgba(140, 150, 200, 0.12)',
-              }}
-              className="flex min-h-[38px] min-w-[38px] cursor-pointer items-center justify-center rounded-full bg-white/58 text-slate-600 backdrop-blur-xl transition-all hover:bg-white/85 hover:text-slate-900 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 sm:min-h-[40px] sm:min-w-[40px]"
-            >
-              <LogOut className="h-4 w-4" aria-hidden="true" />
-            </button>
           </>
         ) : (
           <button
             type="button"
-            data-testid="google-signin-button"
-            onClick={onSignIn}
-            disabled={!isAuthReady || isSigningIn}
+            data-testid="enter-name-button"
+            onClick={onEditName}
             style={{
               border: '1px solid rgba(255, 255, 255, 0.88)',
               boxShadow:
                 'inset 0 2px 8px rgba(255, 255, 255, 0.94), 0 6px 20px rgba(140, 150, 200, 0.16)',
             }}
-            className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-full bg-white/68 px-2.5 py-1.5 text-[10.5px] font-medium whitespace-nowrap text-slate-800 backdrop-blur-xl transition-all hover:bg-white/88 active:scale-95 disabled:cursor-wait disabled:opacity-65 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 sm:min-h-[42px] sm:gap-2 sm:px-4 sm:py-2 sm:text-xs"
+            className="inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-full bg-white/75 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-slate-800 backdrop-blur-xl transition-all hover:bg-white active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 sm:min-h-[42px] sm:gap-2 sm:px-4 sm:py-2"
           >
-            <LogIn className="h-3.5 w-3.5 text-violet-600" aria-hidden="true" />
-            <span>{isSigningIn ? 'Signing in...' : 'Sign in with Google'}</span>
+            <Sparkles className="h-3.5 w-3.5 text-violet-600" aria-hidden="true" />
+            <span>Enter Your Name</span>
           </button>
         )}
       </div>

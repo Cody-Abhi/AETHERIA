@@ -19,10 +19,6 @@ service cloud.firestore {
       return resource.data;
     }
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
     function isValidBubbleSchema(data) {
       return data.keys().hasAll([
         'uid',
@@ -63,17 +59,13 @@ service cloud.firestore {
     }
 
     match /bubbles/{bubbleId} {
-      // Public read for visitors without requiring login; list is capped at 25 docs or scoped to caller's own UID
+      // Public read for visitors: single get or list capped at 25 docs
       allow get: if isValidId(bubbleId);
-      allow list: if (request.query.limit is int && request.query.limit <= 25)
-        || (isSignedIn() && existing().uid == request.auth.uid);
+      allow list: if request.query.limit is int && request.query.limit <= 25;
 
-      // Authenticated creation strictly bound to caller UID, verified email, server timestamp, and 0 initial warmth
-      allow create: if isSignedIn()
-        && request.auth.token.email_verified == true
-        && isValidId(bubbleId)
+      // Creation open to all visitors with name/handle: strict schema validation, server timestamp, 0 initial warmth
+      allow create: if isValidId(bubbleId)
         && isValidBubbleSchema(incoming())
-        && incoming().uid == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().warmthCount == 0;
 

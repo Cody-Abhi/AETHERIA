@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -13,13 +12,13 @@ import {
   query,
   serverTimestamp,
   updateDoc,
-  where,
   type Timestamp,
 } from 'firebase/firestore';
 import { AmbientBackground } from '@/components/AmbientBackground';
 import { ComposerDock } from '@/components/ComposerDock';
 import { FloatingBubble } from '@/components/FloatingBubble';
 import { MessageRevealCard } from '@/components/MessageRevealCard';
+import { NamePromptModal } from '@/components/NamePromptModal';
 import { TopHeader } from '@/components/TopHeader';
 import {
   AUTHOR_HANDLE_PATTERN,
@@ -28,16 +27,25 @@ import {
   EMOTION_LIST,
   MAX_THOUGHT_LENGTH,
   MAX_UID_LENGTH,
+  QUOTA_STORAGE_KEY,
   SEED_THOUGHTS,
   STREAM_LIMIT,
+  canReleaseThought,
   computeBubbleDiameter,
+  consumeDailyQuota,
   createBurstDroplets,
   deriveAuthorHandle,
   formatCurrentTimestamp,
   getEffectiveBubbleDiameter,
+  getLocalUserName,
+  getOrCreateClientUid,
+  getRemainingThoughts,
   getSafeCanvasBounds,
+  getTodayDateKey,
   getUtcDateKey,
+  parseDailyQuota,
   reconcileBubblePhysics,
+  setLocalUserName,
   stepBubblePhysics,
   stripLeadingAt,
   validateThoughtInput,
@@ -48,11 +56,8 @@ import {
 } from '@/lib/aetheria';
 import {
   OperationType,
-  auth,
   db,
   handleFirestoreError,
-  signInWithGoogle,
-  signOutUser,
   testConnection,
 } from '@/lib/firebase';
 import {
@@ -83,15 +88,15 @@ function isEmotionType(value: unknown): value is EmotionType {
 }
 
 export function AetheriaCanvas() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(false);
-  const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [clientUid, setClientUid] = useState<string>('');
+  const [isNameModalOpen, setIsNameModalOpen] = useState<boolean>(false);
+  const [remainingThoughts, setRemainingThoughts] = useState<number>(DAILY_THOUGHT_LIMIT);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<Error | null>(null);
 
   const [streamBubbles, setStreamBubbles] = useState<ThoughtBubbleData[]>(SEED_THOUGHTS);
-  const [todayCount, setTodayCount] = useState<number>(0);
   const [warmthSentIds, setWarmthSentIds] = useState<Record<string, boolean>>({});
   const [fallbackWarmthBonus, setFallbackWarmthBonus] = useState<Record<string, number>>({});
 
@@ -143,19 +148,26 @@ export function AetheriaCanvas() {
     }
   }, []);
 
-  // Validate Firestore connectivity on boot and subscribe to Google Auth state
+  // Initialize user name, client UID, and local daily quota on mount
   useEffect(() => {
     void testConnection();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
-      if (!nextUser) {
-        setTodayCount(0);
-      }
-    });
+    const storedName = getLocalUserName();
+    if (storedName) {
+      setUserName(storedName);
+    } else {
+      const timer = window.setTimeout(() => {
+        setIsNameModalOpen(true);
+      }, 350);
+      return () => window.clearTimeout(timer);
+    }
 
-    return () => unsubscribeAuth();
+    const uid = getOrCreateClientUid();
+    setClientUid(uid);
+
+    const todayKey = getTodayDateKey();
+    const localQuota = parseDailyQuota(window.localStorage.getItem(QUOTA_STORAGE_KEY), todayKey);
+    setRemainingThoughts(getRemainingThoughts(localQuota, todayKey));
   }, []);
 
   // Initialize viewport & initial physics state cleanly on mount
@@ -172,10 +184,8 @@ export function AetheriaCanvas() {
     return () => window.cancelAnimationFrame(frameId);
   }, [syncDomTransforms]);
 
-  // Public real-time stream of the 25 most recent bubbles (available to all visitors without login)
+  // Public real-time stream of the 25 most recent bubbles
   useEffect(() => {
-    if (!authReady) return;
-
     const bubblesQuery = query(
       collection(db, 'bubbles'),
       orderBy('createdAt', 'desc'),
@@ -229,37 +239,7 @@ export function AetheriaCanvas() {
     );
 
     return () => unsubscribeStream();
-  }, [authReady]);
-
-  // Real-time 5-thoughts-a-day quota query for the currently signed-in user (UTC dateKey)
-  useEffect(() => {
-    if (!authReady || !user) return;
-
-    const utcDateKey = getUtcDateKey();
-    const quotaQuery = query(
-      collection(db, 'bubbles'),
-      where('uid', '==', user.uid),
-      where('dateKey', '==', utcDateKey)
-    );
-
-    const unsubscribeQuota = onSnapshot(
-      quotaQuery,
-      (snapshot) => {
-        setTodayCount(snapshot.size);
-      },
-      (error) => {
-        try {
-          handleFirestoreError(error, OperationType.LIST, 'bubbles');
-        } catch (wrappedError) {
-          setFatalError(
-            wrappedError instanceof Error ? wrappedError : new Error(String(wrappedError))
-          );
-        }
-      }
-    );
-
-    return () => unsubscribeQuota();
-  }, [authReady, user]);
+  }, []);
 
   // Keep DOM transforms synced whenever bubble list updates
   useEffect(() => {
@@ -368,47 +348,14 @@ export function AetheriaCanvas() {
   }, []);
 
   const userHandle = useMemo(() => {
-    if (!user) return null;
-    return deriveAuthorHandle(user.displayName, user.email);
-  }, [user]);
-
-  const remainingThoughts = useMemo(() => {
-    if (!user) return DAILY_THOUGHT_LIMIT;
-    return Math.max(0, DAILY_THOUGHT_LIMIT - todayCount);
-  }, [todayCount, user]);
+    if (!userName) return null;
+    return deriveAuthorHandle(userName);
+  }, [userName]);
 
   const activeBubble = useMemo(() => {
     if (!activeBubbleId) return null;
     return bubbles.find((b) => b.id === activeBubbleId) ?? null;
   }, [activeBubbleId, bubbles]);
-
-  const handleSignIn = useCallback(async () => {
-    unlockSoundEngine();
-    setStatusError(null);
-    setIsSigningIn(true);
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      const code =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? String((error as { code?: unknown }).code)
-          : '';
-      if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
-        setStatusError('Could not complete Google Sign-In. Please allow popups and try again.');
-      }
-    } finally {
-      setIsSigningIn(false);
-    }
-  }, []);
-
-  const handleSignOut = useCallback(async () => {
-    setStatusError(null);
-    try {
-      await signOutUser();
-    } catch {
-      setStatusError('Could not sign out right now.');
-    }
-  }, []);
 
   const handleToggleSound = useCallback(() => {
     unlockSoundEngine();
@@ -499,13 +446,27 @@ export function AetheriaCanvas() {
     [soundEnabled]
   );
 
+  const handleSaveName = useCallback(
+    (newName: string) => {
+      setUserName(newName);
+      setLocalUserName(newName);
+      setIsNameModalOpen(false);
+      playEmotionTap('Calm', soundEnabled);
+    },
+    [soundEnabled]
+  );
+
   const handleReleaseBubble = useCallback(
     async (message: string, emotion: EmotionType): Promise<boolean> => {
-      if (!user) {
-        setStatusError('Please sign in with Google to release a bubble.');
+      if (!userName || !userName.trim()) {
+        setIsNameModalOpen(true);
         return false;
       }
-      if (remainingThoughts <= 0) {
+
+      const todayKey = getTodayDateKey();
+      const currentQuota = parseDailyQuota(window.localStorage.getItem(QUOTA_STORAGE_KEY), todayKey);
+      if (!canReleaseThought(currentQuota, todayKey)) {
+        setStatusError("You've reached your daily quota of 5 thoughts. Come back tomorrow!");
         return false;
       }
 
@@ -515,13 +476,13 @@ export function AetheriaCanvas() {
         return false;
       }
 
-      const safeUid = user.uid.slice(0, MAX_UID_LENGTH);
-      const authorHandle = deriveAuthorHandle(user.displayName, user.email);
+      const activeUid = (clientUid || getOrCreateClientUid()).slice(0, MAX_UID_LENGTH);
+      const authorHandle = deriveAuthorHandle(userName);
       const dateKey = getUtcDateKey();
       const safeText = validation.trimmed.slice(0, MAX_THOUGHT_LENGTH);
 
       if (
-        !safeUid ||
+        !activeUid ||
         !AUTHOR_HANDLE_PATTERN.test(authorHandle) ||
         !DATE_KEY_PATTERN.test(dateKey) ||
         !EMOTION_LIST.includes(emotion)
@@ -535,7 +496,7 @@ export function AetheriaCanvas() {
 
       try {
         await addDoc(collection(db, 'bubbles'), {
-          uid: safeUid,
+          uid: activeUid,
           authorHandle,
           text: safeText,
           emotion,
@@ -543,6 +504,12 @@ export function AetheriaCanvas() {
           dateKey,
           warmthCount: 0,
         });
+
+        // Update local daily quota
+        const consumed = consumeDailyQuota(currentQuota, todayKey);
+        window.localStorage.setItem(QUOTA_STORAGE_KEY, JSON.stringify(consumed.nextQuota));
+        setRemainingThoughts(getRemainingThoughts(consumed.nextQuota, todayKey));
+
         playReleaseBubble(soundEnabled);
         return true;
       } catch (error) {
@@ -551,7 +518,7 @@ export function AetheriaCanvas() {
         setIsSubmitting(false);
       }
     },
-    [remainingThoughts, soundEnabled, user]
+    [clientUid, soundEnabled, userName]
   );
 
   return (
@@ -562,11 +529,9 @@ export function AetheriaCanvas() {
         remainingThoughts={remainingThoughts}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
-        isAuthReady={authReady}
         userHandle={userHandle}
-        isSigningIn={isSigningIn}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
+        userName={userName}
+        onEditName={() => setIsNameModalOpen(true)}
       />
 
       {/* Interactive Floating Bubble Canvas */}
@@ -606,14 +571,20 @@ export function AetheriaCanvas() {
       />
 
       <ComposerDock
-        isSignedIn={Boolean(user)}
-        isAuthReady={authReady}
+        userName={userName}
         isSubmitting={isSubmitting}
         remainingThoughts={remainingThoughts}
         statusError={statusError}
-        onSignIn={handleSignIn}
+        onPromptName={() => setIsNameModalOpen(true)}
         onRelease={handleReleaseBubble}
         onSelectEmotion={handleSelectEmotion}
+      />
+
+      <NamePromptModal
+        isOpen={isNameModalOpen}
+        initialName={userName}
+        onClose={() => setIsNameModalOpen(false)}
+        onSaveName={handleSaveName}
       />
     </div>
   );

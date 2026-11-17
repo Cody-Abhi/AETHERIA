@@ -11,23 +11,21 @@ import {
 } from '@/lib/aetheria';
 
 interface ComposerDockProps {
-  isSignedIn: boolean;
-  isAuthReady: boolean;
+  userName: string | null;
   isSubmitting: boolean;
   remainingThoughts: number;
   statusError: string | null;
-  onSignIn: () => void;
+  onPromptName: () => void;
   onRelease: (message: string, emotion: EmotionType) => Promise<boolean>;
   onSelectEmotion?: (emotion: EmotionType) => void;
 }
 
 export function ComposerDock({
-  isSignedIn,
-  isAuthReady,
+  userName,
   isSubmitting,
   remainingThoughts,
   statusError,
-  onSignIn,
+  onPromptName,
   onRelease,
   onSelectEmotion,
 }: ComposerDockProps) {
@@ -35,10 +33,10 @@ export function ComposerDock({
   const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>('Calm');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const isLimitReached = isSignedIn && remainingThoughts <= 0;
-  const isInputDisabled = !isSignedIn || isLimitReached || isSubmitting;
-  const isButtonDisabled =
-    !isSignedIn || isLimitReached || isSubmitting || !text.trim();
+  const hasName = Boolean(userName && userName.trim().length > 0);
+  const isLimitReached = remainingThoughts <= 0;
+  const isInputDisabled = isLimitReached || isSubmitting;
+  const isButtonDisabled = isLimitReached || isSubmitting || (hasName && !text.trim());
 
   const handleEmotionClick = (emotion: EmotionType) => {
     setSelectedEmotion(emotion);
@@ -47,8 +45,8 @@ export function ComposerDock({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!isSignedIn) {
-      onSignIn();
+    if (!hasName) {
+      onPromptName();
       return;
     }
     if (isLimitReached || isSubmitting) return;
@@ -63,6 +61,12 @@ export function ComposerDock({
     const ok = await onRelease(validation.trimmed, selectedEmotion);
     if (ok) {
       setText('');
+    }
+  };
+
+  const handleInputClick = () => {
+    if (!hasName) {
+      onPromptName();
     }
   };
 
@@ -108,24 +112,27 @@ export function ComposerDock({
               type="text"
               value={text}
               disabled={isInputDisabled}
+              onClick={handleInputClick}
               onChange={(e) => {
+                if (!hasName) {
+                  onPromptName();
+                  return;
+                }
                 setText(e.target.value);
                 if (errorMessage) setErrorMessage(null);
               }}
               maxLength={MAX_THOUGHT_LENGTH}
               placeholder={
-                !isAuthReady
-                  ? 'Connecting to AETHERIA...'
-                  : !isSignedIn
-                  ? 'Sign in with Google to share a thought...'
+                !hasName
+                  ? 'First write your name, then share your thoughts...'
                   : isLimitReached
                   ? "You've shared your 5 thoughts for today. Return tomorrow."
-                  : 'How are you feeling?'
+                  : `What's on your mind, ${userName}?`
               }
-              aria-label="How are you feeling?"
+              aria-label="What's on your mind?"
               className="min-h-[38px] w-full bg-transparent text-sm text-[#1E2433] placeholder:text-slate-500/80 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
             />
-            {isSignedIn && !isLimitReached && (
+            {hasName && !isLimitReached && (
               <span
                 aria-label={`${text.length} of ${MAX_THOUGHT_LENGTH} characters`}
                 className={`shrink-0 text-[11px] tabular-nums ${
@@ -188,7 +195,11 @@ export function ComposerDock({
               }}
               className="min-h-[42px] shrink-0 cursor-pointer rounded-full border border-white/70 px-4 py-2 text-xs font-medium whitespace-nowrap text-white transition-all duration-200 hover:brightness-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 sm:px-5"
             >
-              {isSubmitting ? 'Releasing...' : 'Release Bubble'}
+              {!hasName
+                ? 'Enter Name First'
+                : isSubmitting
+                ? 'Releasing...'
+                : 'Release Bubble'}
             </button>
           </div>
         </form>
